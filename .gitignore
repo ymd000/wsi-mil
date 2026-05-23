@@ -1,0 +1,18 @@
+### whitelist style
+/*
+
+### tracked files and directories
+!/wsi_mil/
+!/wsi_mil/*
+
+!/configs/
+!/configs/*
+
+!pyproject.toml
+!.gitignore
+!README.md
+
+### always ignore
+__pycache__/
+*.pyc
+*.pyo
