@@ -1,0 +1,7 @@
+method: mean_pooling
+normalize: false
+# device: auto
+
+dataset:
+  data_dir: /path/to/hdf5
+  encoder: conch15_768

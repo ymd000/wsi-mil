@@ -1,0 +1,13 @@
+method: abmil
+output_dir: ./outputs
+version: latest
+checkpoint_name: best
+use_val_fold: true
+model_kwargs:
+  input_dim: 1536
+  num_classes: 2
+# device: auto
+
+dataset:
+  data_dir: /path/to/hdf5
+  encoder: uni2

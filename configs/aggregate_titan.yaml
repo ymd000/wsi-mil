@@ -1,0 +1,9 @@
+method: titan
+model_name_or_path: MahmoodLab/TITAN
+
+dataset:
+  data_dir: /path/to/hdf5
+  encoder: conch15_768
+
+patch_size_lv0: 512
+# device: auto

@@ -1,0 +1,34 @@
+dataset:
+  data_dir: /path/to/hdf5
+  encoder: conch15_768
+  csv_path: /path/to/labels.csv          # columns: case_id, label
+  subtype_csv_path: /path/to/subtype.csv # optional
+  subtype_col: final_class               # subtype column name (default: subtype)
+
+method_name: titan   # method name used during aggregation (titan / abmil / mean_pooling / ...)
+output_dir: ./eval_outputs
+
+# class settings
+positive_class: 1    # reference class for sensitivity / specificity (binary)
+average: macro       # macro | weighted
+class_names:
+  0: Benign
+  1: Malignant
+
+# UMAP
+plot_umap: true
+umap_filename: umap.png
+umap_figsize: [16, 14]
+umap_random_state: 42
+umap_n_neighbors: 15
+umap_min_dist: 0.1
+umap_annotate: false
+umap_point_size: 100
+umap_ring_size: 160
+umap_ring_linewidth: 2.0
+show_misclassified: true
+# subtype_class_names:   # if omitted, raw CSV values are used as legend labels
+#   fibrous meningioma: Fibrous
+
+# confusion matrix
+plot_confusion_matrix: true
