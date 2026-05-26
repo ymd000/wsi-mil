@@ -176,8 +176,6 @@ def cmd_evaluate(args):
         method_name=method_name,
         csv_path=dataset_cfg["csv_path"],
         encoder_name=dataset_cfg["encoder"],
-        subtype_csv_path=dataset_cfg.get("subtype_csv_path"),
-        subtype_col=dataset_cfg.get("subtype_col", "subtype"),
     )
 
     cmd = EvaluateCommand(config=config)
