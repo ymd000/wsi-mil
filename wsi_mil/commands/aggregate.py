@@ -34,13 +34,23 @@ class SimpleAggregateConfig:
 
 
 @dataclass
-class ABMILAggregateConfig:
-    """Configuration for ABMILAggregateCommand."""
+class ABMILCVAggregateConfig:
+    """Configuration for ABMILAggregateCommand — CV fold models (internal data)."""
     method: str = METHOD_ABMIL
     output_dir: str = "./outputs"
     version: int | str = "latest"
     checkpoint_name: str = "best"
     use_val_fold: bool = True
+    normalize: bool = False
+    device: str = "auto"
+    model_kwargs: dict = field(default_factory=dict)
+
+
+@dataclass
+class ABMILCheckpointAggregateConfig:
+    """Configuration for ABMILAggregateCommand — single checkpoint (external data)."""
+    method: str = METHOD_ABMIL
+    checkpoint_path: str = ""
     normalize: bool = False
     device: str = "auto"
     model_kwargs: dict = field(default_factory=dict)
@@ -184,26 +194,52 @@ class SimpleAggregateCommand:
 
 
 # ------------------------------------------------------------------
+# ABMILAggregateCommand helpers
+# ------------------------------------------------------------------
+
+def _namespace_from_checkpoint(checkpoint_path: str) -> str:
+    """Derive HDF5 namespace from a checkpoint path.
+
+    Examples:
+        outputs/version_2/fold_3/checkpoints/best.ckpt  → version_2_fold_3
+        outputs/version_13/retrain_all/checkpoints/last.ckpt → version_13_all
+    """
+    parts = Path(checkpoint_path).parts
+    for i, part in enumerate(parts):
+        if part.startswith("version_") and part.split("_")[1].isdigit():
+            if i + 1 < len(parts):
+                nxt = parts[i + 1]
+                if nxt == "retrain_all":
+                    return f"{part}_all"
+                if nxt != "checkpoints":
+                    return f"{part}_{nxt}"
+            return part
+    raise ValueError(f"Cannot derive namespace from checkpoint path: {checkpoint_path!r}")
+
+
+# ------------------------------------------------------------------
 # ABMILAggregateCommand
 # ------------------------------------------------------------------
 
 class ABMILAggregateCommand:
-    """ABMIL-based slide embedding aggregation using a trained model.
+    """ABMIL-based slide embedding aggregation.
 
-    Python:
-        cmd = ABMILAggregateCommand(
-            model_class=ABMIL,
-            config=ABMILAggregateConfig(
-                output_dir="./outputs",
-                model_kwargs={"input_dim": 1024, "num_classes": 2},
-            ),
-        )
-        results = cmd(dataset)
+    Accepts either ABMILCVAggregateConfig (K fold models, internal data)
+    or ABMILCheckpointAggregateConfig (single checkpoint, external data).
+
+    The HDF5 key is auto-derived as ``{method}_{namespace}``:
+        abmil_version_2            ← CV aggregate, version 2
+        abmil_version_2_fold_3     ← single fold checkpoint
+        abmil_version_13_all       ← retrain_all checkpoint
     """
 
-    def __init__(self, model_class, config: ABMILAggregateConfig | None = None):
+    def __init__(
+        self,
+        model_class,
+        config: ABMILCVAggregateConfig | ABMILCheckpointAggregateConfig,
+    ):
         self.model_class = model_class
-        self.config = config or ABMILAggregateConfig()
+        self.config = config
         self._models: list = []
         self._fold_manager: FoldManager | None = None
 
@@ -211,14 +247,23 @@ class ABMILAggregateCommand:
         cfg = self.config
         device = self._resolve_device()
         encoder = dataset.encoder_name
-        version_dir = self._resolve_version_dir()
-        self._load_models(version_dir, device)
 
-        val_fold_map: dict[int, int] = {}
-        if cfg.use_val_fold:
-            for fold_info in self._fold_manager.folds:
-                for idx in fold_info.val_indices:
-                    val_fold_map[idx] = fold_info.fold_idx
+        if isinstance(cfg, ABMILCVAggregateConfig):
+            version_dir = self._resolve_version_dir()
+            self._load_cv_models(version_dir, device)
+            namespace = version_dir.name
+            val_fold_map: dict[int, int] = {
+                idx: fold_info.fold_idx
+                for fold_info in self._fold_manager.folds
+                for idx in fold_info.val_indices
+            } if cfg.use_val_fold else {}
+        else:
+            self._load_checkpoint(cfg.checkpoint_path, device)
+            namespace = _namespace_from_checkpoint(cfg.checkpoint_path)
+            val_fold_map = {}
+
+        method_name = f"{cfg.method}_{namespace}"
+        print(f"Slide embedding key: {encoder}/slide_embedding/{method_name}/")
 
         all_embeddings, all_labels, all_h5_paths, all_case_names = [], [], [], []
         all_predictions, all_probabilities, all_attentions, all_selected = [], [], [], []
@@ -232,20 +277,16 @@ class ABMILAggregateCommand:
                     raise KeyError(f"{h5_path}: '{key}' not found.")
                 x = torch.from_numpy(np.asarray(f[key])).float().to(device)
 
-            fold_idx = val_fold_map.get(idx, 0) if cfg.use_val_fold else 0
+            fold_idx = val_fold_map.get(idx, 0)
             result = self._compute_one(x, fold_idx, device)
 
             slide_emb = result["slide_embedding"].cpu().numpy()
-            att      = result["attention"].cpu().numpy() if result["attention"]  is not None else None
+            att      = result["attention"].cpu().numpy() if result["attention"] is not None else None
             pred     = result.get("pred_class")
-            probs    = result["probs"].cpu().numpy()     if result.get("probs")  is not None else None
+            probs    = result["probs"].cpu().numpy()    if result.get("probs")  is not None else None
             selected = result.get("selected_index")
 
-            self._save_to_hdf5(
-                h5_path, encoder, slide_emb,
-                att, pred, probs, selected,
-                overwrite,
-            )
+            self._save_to_hdf5(h5_path, encoder, method_name, slide_emb, att, pred, probs, selected, overwrite)
 
             all_embeddings.append(slide_emb)
             all_labels.append(dataset.labels[idx])
@@ -303,8 +344,9 @@ class ABMILAggregateCommand:
         return result
 
     def _resolve_version_dir(self) -> Path:
-        base = Path(self.config.output_dir)
-        v = self.config.version
+        cfg = self.config
+        base = Path(cfg.output_dir)
+        v = cfg.version
         if v == "latest":
             existing = sorted(
                 [d for d in base.glob("version_*") if d.is_dir()],
@@ -317,7 +359,7 @@ class ABMILAggregateCommand:
             return vdir
         return base / f"version_{v}"
 
-    def _load_models(self, version_dir: Path, device: torch.device) -> None:
+    def _load_cv_models(self, version_dir: Path, device: torch.device) -> None:
         fm = FoldManager(version_dir)
         fm.load()
         self._fold_manager = fm
@@ -329,10 +371,19 @@ class ABMILAggregateCommand:
             self._models.append(model)
             print(f"Loaded fold {fold_idx}: {ckpt}")
 
+    def _load_checkpoint(self, checkpoint_path: str, device: torch.device) -> None:
+        model = self.model_class.load_from_checkpoint(
+            checkpoint_path, **self.config.model_kwargs
+        )
+        model.to(device).eval()
+        self._models = [model]
+        print(f"Loaded checkpoint: {checkpoint_path}")
+
     def _save_to_hdf5(
         self,
         h5_path: Path,
         encoder: str,
+        method_name: str,
         slide_embedding: np.ndarray,
         attention: np.ndarray | None,
         prediction: int | None,
@@ -340,7 +391,7 @@ class ABMILAggregateCommand:
         selected_index: int | None,
         overwrite: bool,
     ) -> None:
-        group_path = f"{encoder}/slide_embedding/{self.config.method}"
+        group_path = f"{encoder}/slide_embedding/{method_name}"
         with h5py.File(h5_path, "a") as f:
             if group_path in f:
                 if not overwrite:

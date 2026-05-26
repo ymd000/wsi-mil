@@ -3,7 +3,9 @@ dataset:
   encoder: conch15_768
   csv_path: /path/to/labels.csv  # columns: case_id, label
 
-method_name: titan   # method name used during aggregation (titan / abmil / mean_pooling / ...)
+method_name: titan   # HDF5 key used during aggregation
+                     # simple methods : mean_pooling / nearest_cosine / nearest_euclidean / titan
+                     # ABMIL (auto-named): abmil_version_2 / abmil_version_2_fold_3 / abmil_version_2_all
 output_dir: ./eval_outputs
 
 # class settings
