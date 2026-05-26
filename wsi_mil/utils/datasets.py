@@ -80,3 +80,57 @@ class WSIDataset(Dataset):
                     self._memory_warned = True
 
         return embeddings
+
+
+class SlideEmbeddingDataset(Dataset):
+    """Dataset that reads pre-aggregated slide embeddings from HDF5.
+
+    Reads ``{encoder}/slide_embedding/{aggregate_method}/embedding`` written
+    by SimpleAggregateCommand / ABMILAggregateCommand / TITANAggregateCommand.
+
+    Args:
+        data_dir:         directory containing HDF5 files
+        encoder_name:     encoder key (e.g. "uni2")
+        aggregate_method: aggregation method key (e.g. "mean_pooling", "titan")
+        csv_path:         CSV with case_id and label columns
+    """
+
+    def __init__(
+        self,
+        data_dir: str,
+        encoder_name: str,
+        aggregate_method: str,
+        csv_path: str | None = None,
+    ):
+        self.data_dir = Path(data_dir)
+        self.encoder_name = encoder_name
+        self.aggregate_method = aggregate_method
+
+        label_dict: dict[str, int] = {}
+        if csv_path is not None:
+            with open(csv_path) as f:
+                for row in csv.DictReader(f):
+                    label_dict[row["case_id"]] = int(row["label"])
+
+        key = f"{encoder_name}/slide_embedding/{aggregate_method}/embedding"
+        self.embeddings: list[torch.Tensor] = []
+        self.labels: list[int] = []
+
+        for file in sorted(self.data_dir.iterdir()):
+            if file.suffix != ".h5":
+                continue
+            with h5py.File(file, "r") as f:
+                if key not in f:
+                    raise KeyError(
+                        f"{file}: '{key}' not found. "
+                        "Run `mil aggregate` first to generate slide embeddings."
+                    )
+                self.embeddings.append(torch.from_numpy(np.asarray(f[key])).float())
+            self.labels.append(label_dict.get(file.stem, -1))
+
+    def __len__(self):
+        return len(self.embeddings)
+
+    def __getitem__(self, idx):
+        """Returns (embedding: Tensor(D,), label: int)."""
+        return self.embeddings[idx], self.labels[idx]
