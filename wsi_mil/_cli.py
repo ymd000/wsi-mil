@@ -81,11 +81,22 @@ def cmd_aggregate(args):
         cmd = TITANAggregateCommand(model_name_or_path=model_name_or_path, config=config)
 
     elif method in ("abmil", "abmil_top"):
-        from wsi_mil.commands import ABMILAggregateCommand, ABMILAggregateConfig
+        from wsi_mil.commands import (
+            ABMILAggregateCommand,
+            ABMILCVAggregateConfig,
+            ABMILCheckpointAggregateConfig,
+        )
         from wsi_mil.models import ABMIL
-        abmil_kwargs = {k: v for k, v in cfg_dict.items()
-                       if k in ABMILAggregateConfig.__dataclass_fields__}
-        config = ABMILAggregateConfig(**abmil_kwargs)
+        if cfg_dict.get("checkpoint_path"):
+            config = ABMILCheckpointAggregateConfig(
+                **{k: v for k, v in cfg_dict.items()
+                   if k in ABMILCheckpointAggregateConfig.__dataclass_fields__}
+            )
+        else:
+            config = ABMILCVAggregateConfig(
+                **{k: v for k, v in cfg_dict.items()
+                   if k in ABMILCVAggregateConfig.__dataclass_fields__}
+            )
         cmd = ABMILAggregateCommand(model_class=ABMIL, config=config)
 
     else:
@@ -154,7 +165,10 @@ def cmd_train(args):
     else:
         sys.exit(f"Error: unknown model '{model_name}'. Choose from: abmil, linear_probe.")
 
-    cmd(dataset)
+    if args.retrain_all:
+        cmd.run_retrain_all(dataset, version_dir=args.version_dir)
+    else:
+        cmd(dataset)
 
 
 # ------------------------------------------------------------------
@@ -217,6 +231,10 @@ def main():
 
     p_train = sub.add_parser("train", help="cross-validation training (abmil / linear_probe)")
     p_train.add_argument("--config", required=True, help="YAML config file")
+    p_train.add_argument("--retrain-all", dest="retrain_all", action="store_true",
+                         help="train on full dataset using an existing version dir (run after CV)")
+    p_train.add_argument("--version-dir", dest="version_dir", metavar="DIR",
+                         help="version directory to use for retrain-all (default: latest)")
 
     p_eval = sub.add_parser("evaluate", help="output metrics / UMAP / confusion matrix")
     p_eval.add_argument("--config", required=True, help="YAML config file")
