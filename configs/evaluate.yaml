@@ -1,11 +1,11 @@
 dataset:
   data_dir: /path/to/hdf5
   encoder: conch15_768
-  csv_path: /path/to/labels.csv          # columns: case_id, label
-  subtype_csv_path: /path/to/subtype.csv # optional
-  subtype_col: final_class               # subtype column name (default: subtype)
+  csv_path: /path/to/labels.csv  # columns: case_id, label
 
-method_name: titan   # method name used during aggregation (titan / abmil / mean_pooling / ...)
+method_name: titan   # HDF5 key used during aggregation
+                     # simple methods : mean_pooling / nearest_cosine / nearest_euclidean / titan
+                     # ABMIL (auto-named): abmil_version_2 / abmil_version_2_fold_3 / abmil_version_2_all
 output_dir: ./eval_outputs
 
 # class settings
@@ -27,8 +27,13 @@ umap_point_size: 100
 umap_ring_size: 160
 umap_ring_linewidth: 2.0
 show_misclassified: true
-# subtype_class_names:   # if omitted, raw CSV values are used as legend labels
-#   fibrous meningioma: Fibrous
+
+# Overlay: case_id で突き合わせた CSV から列を重ねて描画
+# 各列ごとに umap_{col}.png が生成される
+# overlay_csv: /path/to/metadata.csv  # columns: case_id, subtype, grade, ...
+# overlay_cols:
+#   - subtype
+#   - grade
 
 # confusion matrix
 plot_confusion_matrix: true

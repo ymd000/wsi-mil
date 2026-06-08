@@ -1,9 +1,9 @@
-model: abmil
+model: linear_probe
 
 output_dir: ./outputs
 num_fold: 5
 max_epochs: 50
-batch_size: 1
+batch_size: 32
 lr: 1.0e-3
 devices: 1
 num_workers: 0
@@ -12,10 +12,11 @@ random_state: 42
 # existing_fold_dir: ./outputs/version_0  # reuse fold splits from an existing version
 
 model_kwargs:
-  input_dim: 1536
+  embedding_dim: 1536
   num_classes: 2
 
 dataset:
   data_dir: /path/to/hdf5
   encoder: uni2
+  aggregate_method: mean_pooling
   csv_path: /path/to/labels.csv  # columns: case_id, label

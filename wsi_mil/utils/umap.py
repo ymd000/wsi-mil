@@ -16,9 +16,16 @@ except ImportError:
 
 
 def plot_umap(
-    data: dict,
+    embeddings: np.ndarray,
+    labels: np.ndarray,
     output_path: str | Path,
+    coords_2d: np.ndarray | None = None,
     class_names: dict | None = None,
+    predictions: np.ndarray | None = None,
+    case_names: list[str] | None = None,
+    overlay: np.ndarray | None = None,
+    overlay_name: str | None = None,
+    overlay_labels: dict | None = None,
     n_neighbors: int = 15,
     min_dist: float = 0.01,
     random_state: int = 42,
@@ -26,62 +33,55 @@ def plot_umap(
     annotate: bool = True,
     title: str | None = None,
     show_misclassified: bool = True,
-    subtypes: np.ndarray | None = None,
-    subtype_names: dict | None = None,
     point_size: int = 100,
     ring_size: int = 160,
     ring_linewidth: float = 2.0,
-) -> None:
+) -> np.ndarray:
     """Generate and save a UMAP plot of slide embeddings.
 
-    When subtypes is provided:
-      - Layer 1: dots colored by label
-      - Layer 2: hollow rings colored by subtype
-
     Args:
-        data:               dict with keys: embeddings, labels, predictions (optional), case_names (optional)
+        embeddings:         (N, D) slide embeddings
+        labels:             (N,) integer class labels
         output_path:        save path
+        coords_2d:          pre-computed (N, 2) UMAP coordinates; if provided, UMAP fit is skipped
         class_names:        label index → display name
+        predictions:        (N,) predicted labels; enables misclassified markers
+        case_names:         per-sample names for annotation
+        overlay:            (N,) metadata array to render as hollow rings
+        overlay_name:       column name shown in legend
+        overlay_labels:     overlay value → display name
         n_neighbors:        UMAP n_neighbors
         min_dist:           UMAP min_dist
         random_state:       random seed
         figsize:            figure size
         annotate:           annotate each point with case name
-        title:              plot title (default if None)
+        title:              plot title
         show_misclassified: mark misclassified samples with an X
-        subtypes:           subtype array (str or int); if None only label coloring is used
-        subtype_names:      subtype value → display name
         point_size:         filled dot size
-        ring_size:          subtype ring size
-        ring_linewidth:     subtype ring line width
+        ring_size:          overlay ring size
+        ring_linewidth:     overlay ring line width
+
+    Returns:
+        coords_2d: (N, 2) UMAP coordinates (reusable for subsequent overlay plots)
     """
     if not HAS_UMAP:
         raise ImportError("umap-learn is required. Install with: uv add umap-learn")
 
-    embeddings = data["embeddings"]
-    labels = data["labels"]
-    predictions = data.get("predictions")
-    case_names = data.get("case_names")
-
-    if subtypes is None:
-        subtypes = data.get("subtypes")
-    if subtypes is not None:
-        subtypes = np.asarray(subtypes)
-
-    umap_model = umap.UMAP(
-        n_components=2,
-        n_neighbors=n_neighbors,
-        min_dist=min_dist,
-        random_state=random_state,
-        n_jobs=1,
-    )
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message="n_jobs value .* overridden to 1 by setting random_state",
-            category=UserWarning,
+    if coords_2d is None:
+        umap_model = umap.UMAP(
+            n_components=2,
+            n_neighbors=n_neighbors,
+            min_dist=min_dist,
+            random_state=random_state,
+            n_jobs=1,
         )
-        coords_2d = umap_model.fit_transform(embeddings)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="n_jobs value .* overridden to 1 by setting random_state",
+                category=UserWarning,
+            )
+            coords_2d = umap_model.fit_transform(embeddings)
 
     plt.figure(figsize=figsize)
 
@@ -102,23 +102,24 @@ def plot_umap(
             zorder=2,
         )
 
-    # Layer 2: hollow rings colored by subtype
-    if subtypes is not None:
-        unique_subtypes = sorted(np.unique(subtypes), key=str)
-        if len(unique_subtypes) >= 2:
-            st_color_map = _make_color_map(unique_subtypes, cmap="tab20")
-            s_names = subtype_names or {}
-
-            for st in unique_subtypes:
-                mask = subtypes == st
+    # Layer 2: hollow rings colored by overlay
+    if overlay is not None:
+        overlay = np.asarray(overlay, dtype=object)
+        unique_vals = sorted({v for v in overlay if v is not None}, key=str)
+        if len(unique_vals) >= 2:
+            ov_color_map = _make_color_map(unique_vals, cmap="tab20")
+            ov_names = overlay_labels or {}
+            ov_title = overlay_name or "overlay"
+            for val in unique_vals:
+                mask = overlay == val
                 plt.scatter(
                     coords_2d[mask, 0],
                     coords_2d[mask, 1],
                     facecolors="none",
-                    edgecolors=st_color_map[st],
+                    edgecolors=ov_color_map[val],
                     linewidths=ring_linewidth,
                     s=ring_size,
-                    label=s_names.get(st, str(st)),
+                    label=f"{ov_title}: {ov_names.get(val, str(val))}",
                     zorder=3,
                 )
 
@@ -149,12 +150,13 @@ def plot_umap(
                 textcoords="offset points",
             )
 
-    default_title = (
-        "UMAP — label fill / subtype ring" if subtypes is not None
-        else "UMAP Visualization of Slide Embeddings"
-    )
+    if title is None:
+        title = (
+            f"UMAP — label / {overlay_name}" if overlay is not None
+            else "UMAP Visualization of Slide Embeddings"
+        )
     plt.legend(loc="best", fontsize=9)
-    plt.title(title or default_title)
+    plt.title(title)
     plt.xlabel("UMAP Dimension 1")
     plt.ylabel("UMAP Dimension 2")
     plt.grid(True, alpha=0.3)
@@ -162,6 +164,8 @@ def plot_umap(
     plt.savefig(output_path, dpi=150)
     plt.close()
     print(f"Saved UMAP plot: {output_path}")
+
+    return coords_2d
 
 
 def _make_color_map(keys, cmap: str = "tab10") -> dict:

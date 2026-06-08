@@ -24,3 +24,17 @@ def mil_collate_fn(batch: list[tuple[torch.Tensor, int]]):
         mask[i, :feat.size(0)] = 1.0
     labels = torch.tensor(labels, dtype=torch.long)
     return padded, mask, labels
+
+
+def slide_collate_fn(batch: list[tuple[torch.Tensor, int]]):
+    """Collate pre-aggregated slide embeddings into a batch.
+
+    Args:
+        batch: [(embedding: Tensor(D,), label: int), ...]
+
+    Returns:
+        embeddings: (B, D)
+        labels:     (B,)
+    """
+    embeddings, labels = zip(*batch)
+    return torch.stack(embeddings), torch.tensor(labels, dtype=torch.long)

@@ -83,6 +83,82 @@ class TrainCommand:
             results.append(self._run_one_fold(fold_info, dataset, fold_manager))
         return results
 
+    def run_retrain_all(
+        self,
+        dataset,
+        version_dir: str | Path | None = None,
+    ) -> dict:
+        """Train a single model on the full dataset.
+
+        Saves to <version_dir>/retrain_all/. Intended to be run after CV training
+        using the same config. No validation split — trains for cfg.max_epochs fixed.
+
+        Args:
+            dataset:     full dataset (all samples used for training)
+            version_dir: existing version directory from a prior CV run;
+                         if None, uses the latest version in cfg.output_dir
+
+        Returns:
+            {"checkpoint": "...", "version_dir": "..."}
+        """
+        torch.set_float32_matmul_precision("high")
+        cfg = self.config
+
+        if version_dir is None:
+            base_dir = Path(cfg.output_dir)
+            existing = sorted(
+                [d for d in base_dir.glob("version_*") if d.is_dir()],
+                key=lambda d: int(d.name.split("_")[1]),
+            )
+            if existing:
+                version_dir = existing[-1]
+                print(f"Using latest version: {version_dir}")
+            else:
+                version_dir = self._get_version_dir(base_dir)
+                version_dir.mkdir(parents=True, exist_ok=True)
+                self._save_config(version_dir)
+                print(f"Created new version directory: {version_dir}")
+
+        version_dir = Path(version_dir)
+        retrain_dir = version_dir / "retrain_all"
+        retrain_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Retrain-all output: {retrain_dir}")
+
+        model = self.model_class(lr=cfg.lr * cfg.devices, **cfg.model_kwargs)
+
+        train_loader = DataLoader(
+            dataset,
+            batch_size=cfg.batch_size,
+            shuffle=True,
+            num_workers=cfg.num_workers,
+            collate_fn=self.collate_fn,
+        )
+        print(f"Training on all {len(dataset)} samples for {cfg.max_epochs} epochs")
+
+        checkpoint_cb = ModelCheckpoint(
+            dirpath=retrain_dir / "checkpoints",
+            filename="last",
+            save_last=True,
+            save_top_k=0,
+            enable_version_counter=False,
+        )
+        logger = CSVLogger(save_dir=str(retrain_dir), name="logs", version="")
+
+        trainer = L.Trainer(
+            max_epochs=cfg.max_epochs,
+            accelerator="auto",
+            devices=cfg.devices,
+            strategy="ddp" if cfg.devices > 1 else "auto",
+            log_every_n_steps=1,
+            logger=logger,
+            callbacks=[checkpoint_cb],
+        )
+        trainer.fit(model=model, train_dataloaders=train_loader)
+
+        ckpt_path = str(checkpoint_cb.last_model_path)
+        print(f"Saved checkpoint: {ckpt_path}")
+        return {"checkpoint": ckpt_path, "version_dir": str(version_dir)}
+
     def _get_version_dir(self, base_dir: Path) -> Path:
         existing = [d for d in base_dir.glob("version_*") if d.is_dir()]
         next_version = max((int(d.name.split("_")[1]) for d in existing), default=-1) + 1

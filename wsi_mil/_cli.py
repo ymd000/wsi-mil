@@ -81,11 +81,22 @@ def cmd_aggregate(args):
         cmd = TITANAggregateCommand(model_name_or_path=model_name_or_path, config=config)
 
     elif method in ("abmil", "abmil_top"):
-        from wsi_mil.commands import ABMILAggregateCommand, ABMILAggregateConfig
+        from wsi_mil.commands import (
+            ABMILAggregateCommand,
+            ABMILCVAggregateConfig,
+            ABMILCheckpointAggregateConfig,
+        )
         from wsi_mil.models import ABMIL
-        abmil_kwargs = {k: v for k, v in cfg_dict.items()
-                       if k in ABMILAggregateConfig.__dataclass_fields__}
-        config = ABMILAggregateConfig(**abmil_kwargs)
+        if cfg_dict.get("checkpoint_path"):
+            config = ABMILCheckpointAggregateConfig(
+                **{k: v for k, v in cfg_dict.items()
+                   if k in ABMILCheckpointAggregateConfig.__dataclass_fields__}
+            )
+        else:
+            config = ABMILCVAggregateConfig(
+                **{k: v for k, v in cfg_dict.items()
+                   if k in ABMILCVAggregateConfig.__dataclass_fields__}
+            )
         cmd = ABMILAggregateCommand(model_class=ABMIL, config=config)
 
     else:
@@ -99,6 +110,65 @@ def cmd_aggregate(args):
         encoder_name=dataset_cfg["encoder"],
     )
     return cmd(dataset)
+
+
+# ------------------------------------------------------------------
+# Subcommand: train
+# ------------------------------------------------------------------
+
+def cmd_train(args):
+    from wsi_mil.commands import TrainCommand, TrainConfig
+
+    cfg_dict = _load_yaml(args.config)
+    dataset_cfg = cfg_dict.pop("dataset", {})
+    model_name = cfg_dict.pop("model", "abmil")
+
+    train_kwargs = {k: v for k, v in cfg_dict.items()
+                   if k in TrainConfig.__dataclass_fields__}
+    config = TrainConfig(**train_kwargs)
+
+    if model_name == "linear_probe":
+        from wsi_mil.models import LinearProbeModel
+        from wsi_mil.utils import SlideEmbeddingDataset, slide_collate_fn
+
+        for key in ("data_dir", "encoder", "aggregate_method", "csv_path"):
+            if not dataset_cfg.get(key):
+                sys.exit(
+                    f"Error: dataset.{key} is required for linear_probe. "
+                    "Specify in the config file."
+                )
+        dataset = SlideEmbeddingDataset(
+            data_dir=dataset_cfg["data_dir"],
+            encoder_name=dataset_cfg["encoder"],
+            aggregate_method=dataset_cfg["aggregate_method"],
+            csv_path=dataset_cfg["csv_path"],
+        )
+        cmd = TrainCommand(model_class=LinearProbeModel, config=config, collate_fn=slide_collate_fn)
+
+    elif model_name == "abmil":
+        from wsi_mil.models import ABMIL
+        from wsi_mil.utils import WSIDataset, mil_collate_fn
+
+        for key in ("data_dir", "encoder", "csv_path"):
+            if not dataset_cfg.get(key):
+                sys.exit(
+                    f"Error: dataset.{key} is required for abmil. "
+                    "Specify in the config file."
+                )
+        dataset = WSIDataset(
+            data_dir=dataset_cfg["data_dir"],
+            encoder_name=dataset_cfg["encoder"],
+            csv_path=dataset_cfg["csv_path"],
+        )
+        cmd = TrainCommand(model_class=ABMIL, config=config, collate_fn=mil_collate_fn)
+
+    else:
+        sys.exit(f"Error: unknown model '{model_name}'. Choose from: abmil, linear_probe.")
+
+    if args.retrain_all:
+        cmd.run_retrain_all(dataset, version_dir=args.version_dir)
+    else:
+        cmd(dataset)
 
 
 # ------------------------------------------------------------------
@@ -120,8 +190,6 @@ def cmd_evaluate(args):
         method_name=method_name,
         csv_path=dataset_cfg["csv_path"],
         encoder_name=dataset_cfg["encoder"],
-        subtype_csv_path=dataset_cfg.get("subtype_csv_path"),
-        subtype_col=dataset_cfg.get("subtype_col", "subtype"),
     )
 
     cmd = EvaluateCommand(config=config)
@@ -161,6 +229,13 @@ def main():
     p_agg.add_argument("--version",                                  metavar="VER",  help="ABMIL version")
     p_agg.add_argument("--checkpoint",      dest="checkpoint_name",  metavar="NAME", help="ABMIL checkpoint name")
 
+    p_train = sub.add_parser("train", help="cross-validation training (abmil / linear_probe)")
+    p_train.add_argument("--config", required=True, help="YAML config file")
+    p_train.add_argument("--retrain-all", dest="retrain_all", action="store_true",
+                         help="train on full dataset using an existing version dir (run after CV)")
+    p_train.add_argument("--version-dir", dest="version_dir", metavar="DIR",
+                         help="version directory to use for retrain-all (default: latest)")
+
     p_eval = sub.add_parser("evaluate", help="output metrics / UMAP / confusion matrix")
     p_eval.add_argument("--config", required=True, help="YAML config file")
 
@@ -168,6 +243,8 @@ def main():
 
     if args.command == "aggregate":
         cmd_aggregate(args)
+    elif args.command == "train":
+        cmd_train(args)
     elif args.command == "evaluate":
         cmd_evaluate(args)
     else:
