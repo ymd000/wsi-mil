@@ -110,13 +110,14 @@ class TrainCommand:
                 [d for d in base_dir.glob("version_*") if d.is_dir()],
                 key=lambda d: int(d.name.split("_")[1]),
             )
-            if not existing:
-                raise FileNotFoundError(
-                    f"No version directories found in {base_dir}. "
-                    "Run CV training first."
-                )
-            version_dir = existing[-1]
-            print(f"Using latest version: {version_dir}")
+            if existing:
+                version_dir = existing[-1]
+                print(f"Using latest version: {version_dir}")
+            else:
+                version_dir = self._get_version_dir(base_dir)
+                version_dir.mkdir(parents=True, exist_ok=True)
+                self._save_config(version_dir)
+                print(f"Created new version directory: {version_dir}")
 
         version_dir = Path(version_dir)
         retrain_dir = version_dir / "retrain_all"
