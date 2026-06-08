@@ -66,7 +66,7 @@ class ABMIL(L.LightningModule):
         attn_cls = _GatedAttention if gate else _Attention
         self.attention = attn_cls(M=input_dim, L=hidden_dim, K=1)
 
-        self.classifier = nn.Linear(in_dim, num_classes)
+        self.classifier = nn.Linear(input_dim, num_classes)
         self.loss_fn = nn.CrossEntropyLoss()
 
     def encode(self, x: Tensor, mask: Tensor | None = None) -> tuple[Tensor, Tensor]:
