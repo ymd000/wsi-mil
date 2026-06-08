@@ -5,7 +5,7 @@ from .commands import (
     TrainCommand, TrainConfig,
     SimpleAggregateCommand, SimpleAggregateConfig,
     TITANAggregateCommand, TITANConfig,
-    ABMILAggregateCommand, ABMILAggregateConfig,
+    ABMILAggregateCommand, ABMILCVAggregateConfig, ABMILCheckpointAggregateConfig,
     EvaluateCommand, EvaluateConfig,
 )
 from .utils import (
@@ -24,7 +24,7 @@ __all__ = [
     "TrainCommand", "TrainConfig",
     "SimpleAggregateCommand", "SimpleAggregateConfig",
     "TITANAggregateCommand", "TITANConfig",
-    "ABMILAggregateCommand", "ABMILAggregateConfig",
+    "ABMILAggregateCommand", "ABMILCVAggregateConfig", "ABMILCheckpointAggregateConfig",
     "EvaluateCommand", "EvaluateConfig",
     # Utils
     "FoldManager", "FoldInfo",
