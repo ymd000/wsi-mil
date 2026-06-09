@@ -20,6 +20,7 @@ class EvaluateConfig:
     umap_n_neighbors: int = 15
     umap_min_dist: float = 0.01
     umap_annotate: bool = True
+    confusion_matrix_filename: str = "confusion_matrix.png"
     umap_filename: str = "umap.png"
     umap_random_state: int = 42
     umap_point_size: int = 100
@@ -161,14 +162,16 @@ class EvaluateCommand:
         from wsi_mil.utils.metrics import compute_confusion_matrix, plot_confusion_matrix
 
         cm = compute_confusion_matrix(results["labels"], results["predictions"])
+        fname = Path(self.config.confusion_matrix_filename)
+        stem, suffix = fname.stem, fname.suffix
         plot_confusion_matrix(
             cm,
-            output_path=output_dir / "confusion_matrix.png",
+            output_path=output_dir / fname,
             class_names=self.config.class_names,
         )
         plot_confusion_matrix(
             cm,
-            output_path=output_dir / "confusion_matrix_normalized.png",
+            output_path=output_dir / f"{stem}_normalized{suffix}",
             class_names=self.config.class_names,
             normalize=True,
         )
