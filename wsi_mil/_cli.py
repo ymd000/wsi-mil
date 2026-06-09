@@ -181,16 +181,31 @@ def cmd_evaluate(args):
     cfg_dict = _load_yaml(args.config)
     dataset_cfg = cfg_dict.pop("dataset", {})
 
+    _exclude = {"method_name", "mode", "checkpoint_path", "device"}
     config = EvaluateConfig(**{k: v for k, v in cfg_dict.items()
-                               if k != "method_name"})
+                               if k in EvaluateConfig.__dataclass_fields__})
+
+    mode = cfg_dict.get("mode", "load")
     method_name = cfg_dict.get("method_name", "abmil")
 
-    results = EvaluateCommand.load_embeddings(
-        data_dir=dataset_cfg["data_dir"],
-        method_name=method_name,
-        csv_path=dataset_cfg["csv_path"],
-        encoder_name=dataset_cfg["encoder"],
-    )
+    if mode == "linear_probe":
+        if not cfg_dict.get("checkpoint_path"):
+            sys.exit("Error: checkpoint_path is required for mode: linear_probe.")
+        results = EvaluateCommand.infer_linear_probe(
+            checkpoint_path=cfg_dict["checkpoint_path"],
+            data_dir=dataset_cfg["data_dir"],
+            encoder_name=dataset_cfg["encoder"],
+            method_name=method_name,
+            csv_path=dataset_cfg["csv_path"],
+            device=cfg_dict.get("device", "cpu"),
+        )
+    else:
+        results = EvaluateCommand.load_embeddings(
+            data_dir=dataset_cfg["data_dir"],
+            method_name=method_name,
+            csv_path=dataset_cfg["csv_path"],
+            encoder_name=dataset_cfg["encoder"],
+        )
 
     cmd = EvaluateCommand(config=config)
     cmd(results)

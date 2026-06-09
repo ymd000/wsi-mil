@@ -158,6 +158,83 @@ class EvaluateCommand:
         from wsi_mil.utils.metrics import print_metrics as _print
         _print(metrics)
 
+    @staticmethod
+    def infer_linear_probe(
+        checkpoint_path: str | Path,
+        data_dir: str | Path,
+        encoder_name: str,
+        method_name: str,
+        csv_path: str | Path,
+        device: str = "cpu",
+    ) -> dict:
+        """Load slide embeddings from HDF5, run LinearProbeModel, return results dict.
+
+        The returned dict is compatible with __call__().
+
+        Args:
+            checkpoint_path: LinearProbeModel checkpoint (.ckpt)
+            data_dir:        directory containing HDF5 files
+            encoder_name:    encoder name (e.g. "conch15_768")
+            method_name:     aggregate method name (e.g. "titan")
+            csv_path:        label CSV with columns case_id, label
+            device:          torch device string
+        """
+        import csv as _csv
+        import h5py
+        import torch
+        from wsi_mil.models import LinearProbeModel
+
+        data_dir = Path(data_dir)
+        _device = torch.device(device)
+
+        label_dict: dict[str, int] = {}
+        with open(csv_path) as f:
+            for row in _csv.DictReader(f):
+                label_dict[row["case_id"]] = int(row["label"])
+
+        model = LinearProbeModel.load_from_checkpoint(checkpoint_path, map_location=_device)
+        model.to(_device).eval()
+
+        key = f"{encoder_name}/slide_embedding/{method_name}/embedding"
+
+        embeddings, labels, predictions, probabilities = [], [], [], []
+        h5_paths, case_names, indices = [], [], []
+
+        for idx, h5_path in enumerate(sorted(data_dir.glob("*.h5"))):
+            case_id = h5_path.stem
+            if case_id not in label_dict:
+                continue
+            with h5py.File(h5_path, "r") as f:
+                if key not in f:
+                    raise KeyError(f"{h5_path}: '{key}' not found.")
+                emb = torch.from_numpy(f[key][:]).float().to(_device)
+
+            with torch.no_grad():
+                out = model(emb.unsqueeze(0))
+                logits = out["logits"].squeeze(0)
+                probs = torch.softmax(logits, dim=-1)
+                pred = int(probs.argmax().item())
+
+            embeddings.append(emb.cpu().numpy())
+            labels.append(label_dict[case_id])
+            predictions.append(pred)
+            probabilities.append(probs.cpu().numpy())
+            h5_paths.append(h5_path)
+            case_names.append(case_id)
+            indices.append(idx)
+
+        return {
+            "embeddings":       np.stack(embeddings),
+            "labels":           np.array(labels),
+            "predictions":      np.array(predictions),
+            "probabilities":    probabilities,
+            "attentions":       None,
+            "selected_indices": None,
+            "indices":          indices,
+            "h5_paths":         h5_paths,
+            "case_names":       case_names,
+        }
+
     def save_confusion_matrix(self, results: dict, output_dir: Path) -> None:
         from wsi_mil.utils.metrics import compute_confusion_matrix, plot_confusion_matrix
 
