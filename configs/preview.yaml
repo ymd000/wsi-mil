@@ -1,0 +1,12 @@
+scores: /path/to/scores.npz   # npz with {slide_id}: (N,) and optional {slide_id}_ids: (N,)
+patch_size: 512               # must match the cache/{patch_size}/ key written by wsi-toolbox CacheCommand
+                              # HDF5 requires: cache/{patch_size}/patches + cache/{patch_size}/coordinates
+output_dir: ./previews
+colormap: jet                 # any matplotlib colormap
+size: 64                      # thumbnail patch size in output image (px)
+font_size: 12
+jpeg_quality: 90
+
+dataset:
+  data_dir: /path/to/hdf5
+  # h5: /path/to/single_slide.h5   # single-slide alternative
