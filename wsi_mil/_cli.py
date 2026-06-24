@@ -212,6 +212,51 @@ def cmd_evaluate(args):
 
 
 # ------------------------------------------------------------------
+# Subcommand: preview
+# ------------------------------------------------------------------
+
+def cmd_preview(args):
+    from wsi_mil.commands import PreviewCommand, PreviewConfig
+
+    cfg_dict = _load_yaml(args.config) if args.config else {}
+    dataset_cfg = cfg_dict.pop("dataset", {})
+
+    _override(cfg_dict, args, {
+        "scores":       "scores",
+        "patch_size":   "patch_size",
+        "output_dir":   "output_dir",
+        "colormap":     "colormap",
+        "size":         "size",
+        "jpeg_quality": "jpeg_quality",
+    })
+    _override(dataset_cfg, args, {
+        "data_dir": "data_dir",
+        "h5":       "h5",
+    })
+
+    if not cfg_dict.get("scores"):
+        sys.exit("Error: scores is required. Specify via --scores or config file.")
+
+    config = PreviewConfig(**{k: v for k, v in cfg_dict.items()
+                              if k in PreviewConfig.__dataclass_fields__})
+
+    if dataset_cfg.get("h5"):
+        h5_paths = [Path(dataset_cfg["h5"])]
+    elif dataset_cfg.get("data_dir"):
+        h5_paths = sorted(Path(dataset_cfg["data_dir"]).glob("*.h5"))
+        if not h5_paths:
+            sys.exit(f"Error: no .h5 files found in {dataset_cfg['data_dir']}")
+    else:
+        sys.exit(
+            "Error: specify dataset.data_dir or dataset.h5 in config "
+            "(or --data-dir / --h5 via CLI)."
+        )
+
+    cmd = PreviewCommand(config=config)
+    cmd(h5_paths)
+
+
+# ------------------------------------------------------------------
 # Entry point
 # ------------------------------------------------------------------
 
@@ -254,6 +299,17 @@ def main():
     p_eval = sub.add_parser("evaluate", help="output metrics / UMAP / confusion matrix")
     p_eval.add_argument("--config", required=True, help="YAML config file")
 
+    p_prev = sub.add_parser("preview", help="render per-patch score heatmaps to JPEG")
+    p_prev.add_argument("--config",       help="YAML config file (optional; CLI args take precedence)")
+    p_prev.add_argument("--scores",       metavar="FILE", help="scores npz file")
+    p_prev.add_argument("--data-dir",     dest="data_dir",     metavar="DIR",  help="directory of HDF5 files")
+    p_prev.add_argument("--h5",           metavar="FILE",                       help="single HDF5 file")
+    p_prev.add_argument("--patch-size",   dest="patch_size",   type=int, metavar="PX",   help="patch size used in cache (default: 512)")
+    p_prev.add_argument("--output-dir",   dest="output_dir",   metavar="DIR",  help="output directory for JPEGs (default: ./previews)")
+    p_prev.add_argument("--colormap",     metavar="NAME",                       help="matplotlib colormap (default: jet)")
+    p_prev.add_argument("--size",         type=int,            metavar="PX",   help="thumbnail patch size in output image (default: 64)")
+    p_prev.add_argument("--quality",      dest="jpeg_quality", type=int, metavar="0-100", help="JPEG quality (default: 90)")
+
     args = parser.parse_args()
 
     if args.command == "aggregate":
@@ -262,6 +318,8 @@ def main():
         cmd_train(args)
     elif args.command == "evaluate":
         cmd_evaluate(args)
+    elif args.command == "preview":
+        cmd_preview(args)
     else:
         parser.print_help()
         sys.exit(1)

@@ -9,6 +9,7 @@ from .aggregate import (
     TITANConfig,
 )
 from .evaluate import EvaluateCommand, EvaluateConfig
+from .preview import PreviewCommand, PreviewConfig
 
 __all__ = [
     "TrainCommand",
@@ -22,4 +23,6 @@ __all__ = [
     "TITANConfig",
     "EvaluateCommand",
     "EvaluateConfig",
+    "PreviewCommand",
+    "PreviewConfig",
 ]

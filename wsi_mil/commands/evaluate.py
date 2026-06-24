@@ -127,6 +127,8 @@ class EvaluateCommand:
         """
         metrics = self.compute_metrics(results)
         self.print_metrics(metrics)
+        if self.config.show_misclassified:
+            self.print_misclassified(results)
 
         output_dir = Path(self.config.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -157,6 +159,32 @@ class EvaluateCommand:
             return
         from wsi_mil.utils.metrics import print_metrics as _print
         _print(metrics)
+
+    def print_misclassified(self, results: dict) -> None:
+        preds = results.get("predictions")
+        if preds is None:
+            return
+        labels = results["labels"]
+        case_names = results.get("case_names") or []
+        cn = self.config.class_names or {}
+
+        mask = labels != preds
+        n_mis = int(mask.sum())
+        if n_mis == 0:
+            return
+
+        mis_names = [case_names[i] for i in range(len(labels)) if mask[i]]
+        mis_true  = labels[mask]
+        mis_pred  = preds[mask]
+        w = max(len(n) for n in mis_names) if mis_names else 0
+
+        print(f"\nmisclassified {n_mis} / {len(labels)}\n")
+        for name, t, p in zip(mis_names, mis_true, mis_pred):
+            t_label = cn.get(int(t))
+            p_label = cn.get(int(p))
+            t_str = f"{int(t)} ({t_label})" if t_label else str(int(t))
+            p_str = f"{int(p)} ({p_label})" if p_label else str(int(p))
+            print(f"  {name:<{w}}   true={t_str}   pred={p_str}")
 
     @staticmethod
     def infer_linear_probe(
